@@ -1,6 +1,8 @@
 import requests
 import json
 import copy
+import time
+import os
 
 def main():
     files = []
@@ -17,10 +19,10 @@ def main():
 def optimizeFiles(dealer=0,files=None,passwrd=None,user=None,opt=0):
     url = "https://photoai.lotlinx.com"
     POST = "/images/optimize"
- 
+    OUTPUT = "./temp"
     #Make the dictionary for submitting the files
     #Can be submitted as one POST or multiple POST
-    dicts = makeSubmissionDictionaries(dealer=dealer,files=files,opt=1)
+    dicts = makeSubmissionDictionaries(dealer=dealer,files=files,opt=opt)
 
     #submit photos to the optimizer
    
@@ -29,10 +31,81 @@ def optimizeFiles(dealer=0,files=None,passwrd=None,user=None,opt=0):
     #Parse token and status
     #handle error on submit
     tokens,status = checkAndParseSubmit(req)
-
+    
     #Poll server until all jobs have finished or timeout occurs
     #Poll every X sec.  Sum up status when finished to know when to jump out
-    
+    finished = False
+    inittime = time.clock()
+    timeout = 60
+    while finished==False and (time.clock() - inittime) < timeout:
+        urls = getStatusUrl(tokens=tokens,url=url)
+        jobstatus = checkOptimiseStatus(tokens=tokens,user='testaccount3', passwrd='bbf979ab9188',urls=urls)
+        queued,complete,failed = countFinishedFailed(jobstatus)
+        if(complete == len(jobstatus)):
+            #finished with all well
+            finished = True
+        elif(complete+failed == len(jobstatus)):
+            #finished with failures
+            finished = True
+        #Download those that have finished
+        time.sleep(10)
+
+    #if finished and not timed out download files    
+    if(finished==True):
+        urls = getDownloadUrl(tokens=tokens,url=url)
+        downloadFiles(path=OUTPUT,tokens=tokens,user='testaccount3',passwrd='bbf979ab9188',urls=urls)
+
+def downloadFiles(path="./",tokens=[],user=None,passwrd=None,urls=[]):
+    for token,url in zip(tokens,urls):
+        #download dicts containing file urls
+        req = requests.get(url,auth=(user, passwrd))
+        images = req.json()["data"][0]["vehicles"][0]["images"]
+        for image in images:
+            req2 = requests.get(image["modifiedUrl"], allow_redirects=True)
+            try: 
+                os.makedirs(path)
+            except OSError:
+                if not os.path.isdir(path):
+                    raise
+            open(path+"/"+image["modifiedUrl"].rsplit('/', 1)[1], 'wb').write(req2.content)
+            
+            
+def countFinishedFailed(statuses=[]):
+    queued = 0
+    complete = 0
+    failed = 0
+    for status in statuses:
+        if status == "queued":
+            queued=queued+1
+        elif status == "complete":
+            complete=complete+1
+        else:
+            failed=failed+1
+
+    return queued,complete,failed
+        
+def getStatusUrl(tokens=[],url=None):
+    #url format <baseurl>/images/<token>/status
+    urls = []
+    for token in tokens:
+        urls.append(url+"/images/"+token+"/status")
+    return urls
+
+
+def getDownloadUrl(tokens=[],url=None):
+    #url format <baseurl>/images/<token>/status
+    urls = []
+    for token in tokens:
+        urls.append(url+"/images/"+token)
+    return urls
+
+def checkOptimiseStatus(tokens=[],passwrd=None,user=None,urls=[]):
+    status = []
+    for token,url in zip(tokens,urls):
+        req = requests.get(url,auth=(user, passwrd))
+        status.append(req.json()["data"][0]["status"])
+    return status
+
 def checkAndParseSubmit(request=None):
     #check status_code = 200
     tokens = []
