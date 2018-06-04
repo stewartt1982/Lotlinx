@@ -3,8 +3,20 @@ import json
 import copy
 import time
 import os
+import argparse
 
 def main():
+    parser = argparse.ArgumentParser(description='Submit photos to the LotLinx PhotoAI optimizer')
+    parser.add_argument("-f", "--file", dest="filename",
+                        help="input file containing a list of URLs to process", metavar="FILE")
+    parser.add_argument("-u", "--username", dest="username",
+                        help="username for PhotoAI", metavar="FILE")
+    parser.add_argument("-p", "--password", dest="password",
+                        help="password for PhotoAI", metavar="FILE")
+    parser.add_argument("-d", "--dealer", dest="dealer",
+                        help="dealer name", metavar="FILE")
+    parser.add_argument('file', type=argparse.FileType('r'), nargs='+')
+    
     files = []
     files.append("https://img.lotlinx.com/vdn/7416/jeep_wrangler%20unlimited_2014_1C4BJWFG3EL326863_7416_339187295.jpg")
     files.append("https://img.lotlinx.com/vdn/7416/jeep_wrangler%20unlimited_2014_1C4BJWFG3EL326863_7416_2_339187295.jpg")
@@ -12,21 +24,24 @@ def main():
     files.append("https://img.lotlinx.com/vdn/7416/jeep_wrangler%20unlimited_2014_1C4BJWFG3EL326863_7416_4_339187295.jpg")
     files.append("https://img.lotlinx.com/vdn/7416/jeep_wrangler%20unlimited_2014_1C4BJWFG3EL326863_7416_5_339187295.jpg")
 
+    username = 'testaccount3'
+    password = 'bbf979ab9188'
+    path = './temp'
     dealer = 12345
 
-    optimizeFiles(dealer=dealer,files=files)
+    optimizeFiles(dealer=dealer,files=files,passwrd=password,user=username,path=path)
 
-def optimizeFiles(dealer=0,files=None,passwrd=None,user=None,opt=0):
+def optimizeFiles(dealer=0,files=None,passwrd=None,user=None,path="./",opt=0):
     url = "https://photoai.lotlinx.com"
     POST = "/images/optimize"
-    OUTPUT = "./temp"
+    
     #Make the dictionary for submitting the files
     #Can be submitted as one POST or multiple POST
     dicts = makeSubmissionDictionaries(dealer=dealer,files=files,opt=opt)
 
     #submit photos to the optimizer
    
-    req = submitDictionaries(dicts=dicts,user='testaccount3', passwrd='bbf979ab9188',url=url+POST)
+    req = submitDictionaries(dicts=dicts,user=user, passwrd=passwrd,url=url+POST)
     
     #Parse token and status
     #handle error on submit
@@ -39,7 +54,7 @@ def optimizeFiles(dealer=0,files=None,passwrd=None,user=None,opt=0):
     timeout = 60
     while finished==False and (time.clock() - inittime) < timeout:
         urls = getStatusUrl(tokens=tokens,url=url)
-        jobstatus = checkOptimiseStatus(tokens=tokens,user='testaccount3', passwrd='bbf979ab9188',urls=urls)
+        jobstatus = checkOptimiseStatus(tokens=tokens,user=user, passwrd=passwrd,urls=urls)
         queued,complete,failed = countFinishedFailed(jobstatus)
         if(complete == len(jobstatus)):
             #finished with all well
@@ -53,7 +68,7 @@ def optimizeFiles(dealer=0,files=None,passwrd=None,user=None,opt=0):
     #if finished and not timed out download files    
     if(finished==True):
         urls = getDownloadUrl(tokens=tokens,url=url)
-        downloadFiles(path=OUTPUT,tokens=tokens,user='testaccount3',passwrd='bbf979ab9188',urls=urls)
+        downloadFiles(path=path,tokens=tokens,user=user,passwrd=passwrd,urls=urls)
 
 def downloadFiles(path="./",tokens=[],user=None,passwrd=None,urls=[]):
     for token,url in zip(tokens,urls):
