@@ -1,184 +1,63 @@
-import requests
 import json
 import copy
 import time
 import os
+import sys
 import argparse
+#The optimizer funtions are in this module
+import optimizer
+
 
 def main():
-    parser = argparse.ArgumentParser(description='Submit photos to the LotLinx PhotoAI optimizer')
-    parser.add_argument("-f", "--file", dest="filename",
+    parser = argparse.ArgumentParser(prog='optimize_photos',description='Submit photos to the LotLinx PhotoAI optimizer')
+    parser.add_argument("-f", "--file", dest="filename",type=argparse.FileType('r'),
                         help="input file containing a list of URLs to process", metavar="FILE")
-    parser.add_argument("-u", "--username", dest="username",
-                        help="username for PhotoAI", metavar="FILE")
-    parser.add_argument("-p", "--password", dest="password",
-                        help="password for PhotoAI", metavar="FILE")
-    parser.add_argument("-d", "--dealer", dest="dealer",
-                        help="dealer name", metavar="FILE")
-    parser.add_argument('file', type=argparse.FileType('r'), nargs='+')
-    
-    files = []
-    files.append("https://img.lotlinx.com/vdn/7416/jeep_wrangler%20unlimited_2014_1C4BJWFG3EL326863_7416_339187295.jpg")
-    files.append("https://img.lotlinx.com/vdn/7416/jeep_wrangler%20unlimited_2014_1C4BJWFG3EL326863_7416_2_339187295.jpg")
-    files.append("https://img.lotlinx.com/vdn/7416/jeep_wrangler%20unlimited_2014_1C4BJWFG3EL326863_7416_3_339187295.jpg")
-    files.append("https://img.lotlinx.com/vdn/7416/jeep_wrangler%20unlimited_2014_1C4BJWFG3EL326863_7416_4_339187295.jpg")
-    files.append("https://img.lotlinx.com/vdn/7416/jeep_wrangler%20unlimited_2014_1C4BJWFG3EL326863_7416_5_339187295.jpg")
+    parser.add_argument("-t", "--timeout", dest="timeout",type=int,default=100,
+                        help="timeout to control how long the program should wait to download files in seconds", metavar="TIMEOUT")
+    parser.add_argument("-u", "--username", dest="username",type=str,default="",
+                        help="username for PhotoAI", metavar="USERNAME")
+    parser.add_argument("-p", "--password", dest="password",type=str,default="",
+                        help="password for PhotoAI", metavar="PASSWORD")
+    parser.add_argument("-d", "--dealer", dest="dealer",type=int,default=1,
+                        help="dealer number/name", metavar="DEALER")
+    parser.add_argument("-o", "--output", dest="output",type=str,default="./",
+                        help="output directory", metavar="DIR")
+    parser.add_argument('URL', type=str, nargs='*',help="1 or more URLs to images. Required if -f/--file is not used")
+    args = parser.parse_args()
 
-    username = 'testaccount3'
-    password = 'bbf979ab9188'
-    path = './temp'
-    dealer = 12345
+    #Process command line arguments
+    urls = []
+    #Deal with passed urls
+    if args.filename is not None:
+        for l in args.filename:
+            urls.append(l.rstrip())
 
-    optimizeFiles(dealer=dealer,files=files,passwrd=password,user=username,path=path)
+    #Append any urls given as optional commandline arguments
+    if len(args.URL) != 0:
+        for url in args.URL:
+            urls.append(url.rstrip())
 
-def optimizeFiles(dealer=0,files=None,passwrd=None,user=None,path="./",opt=0):
-    url = "https://photoai.lotlinx.com"
-    POST = "/images/optimize"
-    
-    #Make the dictionary for submitting the files
-    #Can be submitted as one POST or multiple POST
-    dicts = makeSubmissionDictionaries(dealer=dealer,files=files,opt=opt)
-
-    #submit photos to the optimizer
-   
-    req = submitDictionaries(dicts=dicts,user=user, passwrd=passwrd,url=url+POST)
-    
-    #Parse token and status
-    #handle error on submit
-    tokens,status = checkAndParseSubmit(req)
-    
-    #Poll server until all jobs have finished or timeout occurs
-    #Poll every X sec.  Sum up status when finished to know when to jump out
-    finished = False
-    inittime = time.clock()
-    timeout = 60
-    while finished==False and (time.clock() - inittime) < timeout:
-        urls = getStatusUrl(tokens=tokens,url=url)
-        jobstatus = checkOptimiseStatus(tokens=tokens,user=user, passwrd=passwrd,urls=urls)
-        queued,complete,failed = countFinishedFailed(jobstatus)
-        if(complete == len(jobstatus)):
-            #finished with all well
-            finished = True
-        elif(complete+failed == len(jobstatus)):
-            #finished with failures
-            finished = True
-        #Download those that have finished
-        time.sleep(10)
-
-    #if finished and not timed out download files    
-    if(finished==True):
-        urls = getDownloadUrl(tokens=tokens,url=url)
-        downloadFiles(path=path,tokens=tokens,user=user,passwrd=passwrd,urls=urls)
-
-def downloadFiles(path="./",tokens=[],user=None,passwrd=None,urls=[]):
-    for token,url in zip(tokens,urls):
-        #download dicts containing file urls
-        req = requests.get(url,auth=(user, passwrd))
-        images = req.json()["data"][0]["vehicles"][0]["images"]
-        for image in images:
-            req2 = requests.get(image["modifiedUrl"], allow_redirects=True)
-            try: 
-                os.makedirs(path)
-            except OSError:
-                if not os.path.isdir(path):
-                    raise
-            open(path+"/"+image["modifiedUrl"].rsplit('/', 1)[1], 'wb').write(req2.content)
-            
-            
-def countFinishedFailed(statuses=[]):
-    queued = 0
-    complete = 0
-    failed = 0
-    for status in statuses:
-        if status == "queued":
-            queued=queued+1
-        elif status == "complete":
-            complete=complete+1
-        else:
-            failed=failed+1
-
-    return queued,complete,failed
+    #Check if there are no passed URLs
+    if len(urls) == 0:
+        #exit
+        print "ERROR: No URLs passed to optimize_photos\n"
+        print sys.exit(1)
         
-def getStatusUrl(tokens=[],url=None):
-    #url format <baseurl>/images/<token>/status
-    urls = []
-    for token in tokens:
-        urls.append(url+"/images/"+token+"/status")
-    return urls
-
-
-def getDownloadUrl(tokens=[],url=None):
-    #url format <baseurl>/images/<token>/status
-    urls = []
-    for token in tokens:
-        urls.append(url+"/images/"+token)
-    return urls
-
-def checkOptimiseStatus(tokens=[],passwrd=None,user=None,urls=[]):
-    status = []
-    for token,url in zip(tokens,urls):
-        req = requests.get(url,auth=(user, passwrd))
-        status.append(req.json()["data"][0]["status"])
-    return status
-
-def checkAndParseSubmit(request=None):
-    #check status_code = 200
-    tokens = []
-    status = []
-    for req in request:
-        if(req.status_code != 200):
-            print "error!"
-        else:
-            if 'meta' in req.json():
-                #error
-                print "error"
-            else:
-                tokens.append(req.json()["data"][0]["token"])
-                status.append(req.json()["data"][0]["status"])
-                
-    return tokens,status
-
-def submitDictionaries(passwrd=None,user=None,dicts=None,url=None):
-    req = []
-    for sub in dicts:
-        req.append(requests.post(url,json=sub,auth=(user, passwrd)))
-    return req
+    if args.password is not None:
+        password = args.password
+    if args.username is not None:
+        username = args.username
+    if args.dealer is not None:
+        dealer = args.dealer
+    if args.output is not None:
+        path = args.output
+    if args.timeout is not None:
+        timeout=args.timeout
+            
+    #Run PhotoAI optimizer
+    logging = open("logging.txt","w")
+    optimizer.optimizeFiles(dealer=dealer,files=urls,passwrd=password,user=username,path=path,timeout=timeout,logfile=logging)
+    logging.close()
     
-def makeSubmissionDictionaries(dealer=0,files=None,opt=0):
-    outputdict = []
-    subdict = {
-        "dealerId": dealer,
-        "vehicles": [
-            {"id": 0,
-             "images" : []
-            }
-        ]
-    }
-
-    filecounter=1
-    if(opt==0):
-        #All files we be submitted in one go
-        for idx,filename in enumerate(files):
-            subdict["vehicles"][0]["images"].append({"imageId": idx,"imageUrl":filename})
-        subdict["vehicles"][0]["id"]=filecounter
-        outputdict.append(copy.deepcopy(subdict))
-    else:
-        #Files re inserted in individual submits
-        for filename in files:
-            subdict["vehicles"][0]["images"].append({"imageId": 0,"imageUrl":filename})
-            outputdict.append(copy.deepcopy(subdict))
-            #reset
-            del subdict["vehicles"][0]["images"][:]
-
-    #reset the subdict dictionary
-    #set vehicles id to 0, clear list of urls
-    subdict["vehicles"][0]["id"]=0
-    del subdict["vehicles"][0]["images"][:]
-
-    return outputdict;
-
-
-    
-
 if __name__=='__main__':
     main()
