@@ -35,8 +35,8 @@ is able to accept a redirect from stdin
 The format of the file when the FILE option is used should be a list of URLs, with one URL on each line.
 
 Thus:
-./optimize_photos.py  -d <dealer> -t <timeout> -p <password> -u <username>  -o <output directory> -f <URL file>
+./optimize_photos.py  -d \<dealer\> -t \<timeout\> -p \<password\> -u \<username\>  -o \<output directory\> -f \<URL file\>
 
 is equivalent to
 
-./optimize_photos.py  -d <dealer> -t <timeout> -p <password> -u <username>  -o <output directory>  <  <URL file>
+./optimize_photos.py  -d \<dealer\> -t \<timeout\> -p \<password\> -u \<username\>  -o \<output directory\>  \<  \<URL file\>
