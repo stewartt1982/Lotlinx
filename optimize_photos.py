@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import json
 import copy
 import time
@@ -37,6 +38,13 @@ def main():
         for url in args.URL:
             urls.append(url.rstrip())
 
+    #Check if there was a redirect from stdin. only accept if there is
+    #no inpt from file or optional arguments
+
+    if len(urls) == 0:
+        for line in sys.stdin:
+            urls.append(line.rstrip())
+            
     #Check if there are no passed URLs
     if len(urls) == 0:
         #exit
